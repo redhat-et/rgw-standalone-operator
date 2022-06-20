@@ -22,6 +22,7 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -31,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	bktv1alpha1 "github.com/kube-object-storage/lib-bucket-provisioner/pkg/apis/objectbucket.io/v1alpha1"
 	objectv1alpha1 "github.com/leseb/rook-s3-nano/api/v1alpha1"
 	"github.com/leseb/rook-s3-nano/controllers"
 	//+kubebuilder:scaffold:imports
@@ -42,9 +44,14 @@ var (
 )
 
 func init() {
+	// Common Kubernetes types
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
+	// Our API
 	utilruntime.Must(objectv1alpha1.AddToScheme(scheme))
+
+	// OB and OBC types for lib-bucket-provisioner
+	utilruntime.Must(bktv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -74,31 +81,49 @@ func main() {
 		LeaderElectionID:       "ebd6c04d.rook-s3-nano",
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		setupLog.Error(err, "failed to start manager")
+		os.Exit(1)
+	}
+
+	kubernetesClientSet, err := kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		setupLog.Error(err, "failed to create kubernetes client set")
 		os.Exit(1)
 	}
 
 	if err = (&controllers.ObjectStoreReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:                   mgr.GetClient(),
+		Scheme:                   mgr.GetScheme(),
+		Logger:                   ctrl.Log.WithName("controllers").WithName("ObjectStore"),
+		RemotePodCommandExecutor: controllers.NewExecutor(kubernetesClientSet, mgr.GetConfig(), ctrl.Log.WithName("controllers").WithName("ObjectStore")),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ObjectStore")
+		setupLog.Error(err, "failed to create controller", "controller", "ObjectStore")
 		os.Exit(1)
 	}
+
+	// if err = (&controllers.ObjectStoreBucketReconciler{
+	// 	Client:     mgr.GetClient(),
+	// 	Scheme:     mgr.GetScheme(),
+	// 	RestConfig: mgr.GetConfig(),
+	// 	Logger:     ctrl.Log.WithName("controllers").WithName("ObjectStoreBucket"),
+	// }).SetupWithManager(mgr); err != nil {
+	// 	setupLog.Error(err, "failed to create controller", "controller", "ObjectStoreBucket")
+	// 	os.Exit(1)
+	// }
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
+		setupLog.Error(err, "failed to set up health check")
 		os.Exit(1)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
+		setupLog.Error(err, "failed to set up ready check")
 		os.Exit(1)
 	}
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
+		setupLog.Error(err, "failed to run manager")
 		os.Exit(1)
 	}
 }
