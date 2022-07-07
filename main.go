@@ -91,11 +91,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	logger := ctrl.Log.WithName("controllers").WithName("ObjectStore")
 	if err = (&controllers.ObjectStoreReconciler{
 		Client:                   mgr.GetClient(),
 		Scheme:                   mgr.GetScheme(),
-		Logger:                   ctrl.Log.WithName("controllers").WithName("ObjectStore"),
-		RemotePodCommandExecutor: controllers.NewExecutor(kubernetesClientSet, mgr.GetConfig(), ctrl.Log.WithName("controllers").WithName("ObjectStore")),
+		Logger:                   logger,
+		RemotePodCommandExecutor: controllers.NewExecutor(kubernetesClientSet, mgr.GetConfig(), logger),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "failed to create controller", "controller", "ObjectStore")
 		os.Exit(1)

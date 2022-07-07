@@ -78,7 +78,7 @@ func NewExecutor(clientSet kubernetes.Interface, restClient *rest.Config, logger
 func (e *RemotePodCommandExecutor) ExecWithOptions(options ExecOptions) (string, string, error) {
 	const tty = false
 
-	e.Logger.Info("ExecWithOptions %+v", options)
+	e.Logger.Info("ExecWithOptions", "Options", options)
 
 	req := e.ClientSet.CoreV1().RESTClient().Post().
 		Resource("pods").
@@ -106,9 +106,9 @@ func (e *RemotePodCommandExecutor) ExecWithOptions(options ExecOptions) (string,
 
 // ExecCommandInContainerWithFullOutput executes a command in the
 // specified container and return stdout, stderr and error
-func (e *RemotePodCommandExecutor) ExecCommandInContainerWithFullOutput(appLabel, containerName, namespace string, cmd ...string) (string, string, error) {
-	options := metav1.ListOptions{LabelSelector: fmt.Sprintf("app=%s", appLabel)}
-	pods, err := e.ClientSet.CoreV1().Pods(namespace).List(context.TODO(), options)
+func (e *RemotePodCommandExecutor) ExecCommandInContainerWithFullOutput(ctx context.Context, appLabel, containerName, namespace string, cmd ...string) (string, string, error) {
+	options := metav1.ListOptions{LabelSelector: appLabel}
+	pods, err := e.ClientSet.CoreV1().Pods(namespace).List(ctx, options)
 	if err != nil {
 		return "", "", err
 	}
@@ -118,10 +118,8 @@ func (e *RemotePodCommandExecutor) ExecCommandInContainerWithFullOutput(appLabel
 	}
 
 	return e.ExecWithOptions(ExecOptions{
-		Command:   cmd,
-		Namespace: namespace,
-		// Always pick the first pod, it's always 1 unless stretched cluster is enabled
-		// TODO: if we have 2 pods we could try each result if the command fails to run due to a network partition-related error.
+		Command:            cmd,
+		Namespace:          namespace,
 		PodName:            pods.Items[0].Name,
 		ContainerName:      containerName,
 		Stdin:              nil,
@@ -144,6 +142,6 @@ func execute(method string, url *url.URL, config *rest.Config, stdin io.Reader, 
 	})
 }
 
-func (e *RemotePodCommandExecutor) ExecCommandInContainerWithFullOutputWithTimeout(appLabel, containerName, namespace string, cmd ...string) (string, string, error) {
-	return e.ExecCommandInContainerWithFullOutput(appLabel, containerName, namespace, append([]string{"timeout", strconv.Itoa(int(cmdTimeOut.Seconds()))}, cmd...)...)
+func (e *RemotePodCommandExecutor) ExecCommandInContainerWithFullOutputWithTimeout(ctx context.Context, appLabel, containerName, namespace string, cmd ...string) (string, string, error) {
+	return e.ExecCommandInContainerWithFullOutput(ctx, appLabel, containerName, namespace, append([]string{"timeout", strconv.Itoa(int(cmdTimeOut.Seconds()))}, cmd...)...)
 }

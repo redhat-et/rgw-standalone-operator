@@ -46,6 +46,8 @@ type ObjectStoreReconciler struct {
 //+kubebuilder:rbac:groups=object.rook-s3-nano,resources=objectstores/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=create;delete;get;list
 //+kubebuilder:rbac:groups="",resources=services,verbs=create;delete;get;update;list;watch
+//+kubebuilder:rbac:groups="",resources=pods,verbs=list;watch
+//+kubebuilder:rbac:groups="",resources=pods/exec,verbs=create
 //+kubebuilder:rbac:groups="apps",resources=deployments,verbs=create;delete;get;update;list;watch
 
 // SetupWithManager sets up the controller with the Manager.
@@ -114,6 +116,24 @@ func (r *ObjectStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	r.Logger.Info("successful deployment " + string(reconcileResult))
 
+	// Wait for the pod to be ready
+	err = r.waitForLabeledPodsToRunWithRetries(ctx, getLabels(objectStore.Name), 5)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to wait for pods to be ready: %w", err)
+	}
+
+	// Try remote executor
+	output, stderr, err := r.RemotePodCommandExecutor.ExecCommandInContainerWithFullOutputWithTimeout(
+		ctx,
+		getLabelString(objectStore.Name),
+		"rgw",
+		objectStore.Namespace,
+		append([]string{"radosgw-admin-sqlite"}, buildFinalCLIArgs([]string{"user", "list"})...)...,
+	)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to execute radosgw-admin-sqlite user list: %s. %w", stderr, err)
+	}
+	r.Logger.Info("radosgw-admin-sqlite user list output: \n" + output)
 	r.Logger.Info("successfully reconciled", "ObjectStore", req.NamespacedName.String())
 	return ctrl.Result{}, nil
 }

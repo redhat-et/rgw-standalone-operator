@@ -50,7 +50,7 @@ func defaultDaemonFlag() []string {
 		// Daemonize option
 		"-d",
 		// Disable lockdep - might improve memory usage
-		"--nolockdep ",
+		"--nolockdep",
 	},
 		defaultFlags()...)
 }
@@ -58,12 +58,14 @@ func defaultDaemonFlag() []string {
 // defaultFlags is used for both daemon and CLI
 func defaultFlags() []string {
 	return []string{
-		// flags to disable cephx (avoid cluttering logs)
-		"--auth-client-required=none",
-		"--auth-service-required=none",
-		"--auth-cluster-required=none",
 		// this is a must have since there is no ceph cluster to connect to.
 		"--no-mon-config",
+
+		newFlag("librados sqlite data dir", objectStoreDataDirectory),
+		// flags to disable cephx (avoid cluttering logs)
+		newFlag("auth-client-required", "none"),
+		newFlag("auth-service-required", "none"),
+		newFlag("auth-cluster-required", "none"),
 	}
 }
 
@@ -71,8 +73,8 @@ func instanceName(name, namespace string) string {
 	return fmt.Sprintf("%s-%s-%s", appName, name, namespace)
 }
 
-// NewFlag returns the key-value pair in the format of a Ceph command line-compatible flag.
-func NewFlag(key, value string) string {
+// newFlag returns the key-value pair in the format of a Ceph command line-compatible flag.
+func newFlag(key, value string) string {
 	// A flag is a normalized key with underscores replaced by dashes.
 	// "debug default" ~normalize~> "debug_default" ~to~flag~> "debug-default"
 	n := normalizeKey(key)
@@ -121,4 +123,8 @@ func daemonVolumeMountPVC() v1.VolumeMount {
 func hash(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:16])
+}
+
+func buildFinalCLIArgs(args []string) []string {
+	return append(defaultFlags(), args...)
 }

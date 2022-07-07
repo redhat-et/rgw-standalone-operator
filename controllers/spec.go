@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"time"
 
 	objectv1alpha1 "github.com/leseb/rook-s3-nano/api/v1alpha1"
 
@@ -27,6 +28,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	controllerclient "sigs.k8s.io/controller-runtime/pkg/client"
 	controllerutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -47,7 +49,7 @@ func (r *ObjectStoreReconciler) createOrUpdateDeployment(ctx context.Context, ob
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instanceName(objectStore.Name, objectStore.Namespace),
 			Namespace: objectStore.Namespace,
-			Labels:    getLabels(objectStore.Name, objectStore.Namespace),
+			Labels:    getLabels(objectStore.Name),
 		},
 	}
 
@@ -65,7 +67,7 @@ func (r *ObjectStoreReconciler) createOrUpdateDeployment(ctx context.Context, ob
 
 		deploy.Spec = apps.DeploymentSpec{
 			Selector: &metav1.LabelSelector{
-				MatchLabels: getLabels(objectStore.Name, objectStore.Namespace),
+				MatchLabels: getLabels(objectStore.Name),
 			},
 			Template: pod,
 		}
@@ -103,7 +105,7 @@ func (r *ObjectStoreReconciler) makeRGWPodSpec(objectStore *objectv1alpha1.Objec
 	podTemplateSpec := v1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   instanceName(objectStore.Name, objectStore.Namespace),
-			Labels: getLabels(objectStore.Name, objectStore.Namespace),
+			Labels: getLabels(objectStore.Name),
 		},
 		Spec: podSpec,
 	}
@@ -122,11 +124,10 @@ func (r *ObjectStoreReconciler) makeDaemonContainer(objectStore *objectv1alpha1.
 		Args: append(
 			defaultDaemonFlag(),
 			// Use a hash otherwise the socket name might be too long
-			NewFlag("id", hash(ContainerEnvVarReference(podNameEnvVar))),
-			NewFlag("host", ContainerEnvVarReference(podNameEnvVar)),
-			NewFlag("librados sqlite data dir", objectStoreDataDirectory),
+			newFlag("id", hash(ContainerEnvVarReference(podNameEnvVar))),
+			newFlag("host", ContainerEnvVarReference(podNameEnvVar)),
 			// TODO: remove me one day? - currently it's helpful to see the DB's initialization progress
-			NewFlag("debug rgw", "15"),
+			newFlag("debug rgw", "15"),
 		),
 		VolumeMounts: []v1.VolumeMount{daemonVolumeMountPVC()},
 		Env:          DaemonEnvVars(objectStore.Spec.Image),
@@ -140,7 +141,7 @@ func (r *ObjectStoreReconciler) generateService(objectStore *objectv1alpha1.Obje
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instanceName(objectStore.Name, objectStore.Namespace),
 			Namespace: objectStore.Namespace,
-			Labels:    getLabels(objectStore.Name, objectStore.Namespace),
+			Labels:    getLabels(objectStore.Name),
 		},
 	}
 
@@ -159,7 +160,7 @@ func (r *ObjectStoreReconciler) reconcileService(ctx context.Context, objectStor
 	mutateFunc := func() error {
 		// If the cluster is not external we add the Selector
 		service.Spec = v1.ServiceSpec{
-			Selector: getLabels(objectStore.Name, objectStore.Namespace),
+			Selector: getLabels(objectStore.Name),
 		}
 
 		addPort(service, "http", 8080, rgwPortInternalPort)
@@ -188,10 +189,14 @@ func addPort(service *v1.Service, name string, port, destPort int32) {
 	})
 }
 
-func getLabels(name, namespace string) map[string]string {
+func getLabels(name string) map[string]string {
 	return map[string]string{
 		"object_store": name,
 	}
+}
+
+func getLabelString(name string) string {
+	return fmt.Sprintf("object_store=%s", name)
 }
 
 // chownCephDataDirsInitContainer returns an init container which `chown`s the given data
@@ -232,4 +237,37 @@ func podSecurityContext() *v1.SecurityContext {
 		Privileged: &privileged,
 		RunAsUser:  &root,
 	}
+}
+
+func (r *ObjectStoreReconciler) waitForLabeledPodsToRunWithRetries(ctx context.Context, labels map[string]string, retries int) error {
+	const retryInterval = 5
+
+	podList := &v1.PodList{}
+	var lastPod v1.Pod
+	for i := 0; i < retries; i++ {
+		err := r.Client.List(ctx, podList, controllerclient.MatchingLabels(labels))
+		lastStatus := ""
+		running := 0
+		if err == nil && len(podList.Items) > 0 {
+			for _, pod := range podList.Items {
+				if pod.Status.Phase == "Running" {
+					running++
+				}
+				lastPod = pod
+				lastStatus = string(pod.Status.Phase)
+			}
+			if running == len(podList.Items) {
+				r.Logger.Info("all pod(s) running", "Pods", len(podList.Items), "label", labels)
+				return nil
+			}
+		}
+		r.Logger.Info("waiting for", "pod(s) with label", labels, "status", lastStatus, "running", running, "numPod", len(podList.Items), "Error", err)
+		time.Sleep(retryInterval * time.Second)
+	}
+
+	if len(lastPod.Name) == 0 {
+		return fmt.Errorf("no pod was found with label %v", labels)
+	}
+
+	return fmt.Errorf("giving up waiting for pod with label %v to be running", labels)
 }
