@@ -3,7 +3,7 @@ kind: ObjectStore
 metadata:
   name: objectstore-sample
 spec:
-  image: quay.ceph.io/ceph-ci/ceph:wip-librados-wrapper-7
+  image: quay.ceph.io/ceph-ci/ceph:wip-librados-wrapper-8-af9b01c-centos-stream8-x86_64-devel
   volumeClaimTemplate:
     spec:
       storageClassName: standard

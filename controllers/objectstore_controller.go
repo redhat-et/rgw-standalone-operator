@@ -18,7 +18,9 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"regexp"
 
 	v1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -41,12 +43,16 @@ type ObjectStoreReconciler struct {
 	*RemotePodCommandExecutor
 }
 
+type realmSpec struct {
+	Realms []string `json:"realms"`
+}
+
 //+kubebuilder:rbac:groups=object.rook-s3-nano,resources=objectstores,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=object.rook-s3-nano,resources=objectstores/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=object.rook-s3-nano,resources=objectstores/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=create;delete;get;list
 //+kubebuilder:rbac:groups="",resources=services,verbs=create;delete;get;update;list;watch
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;
 //+kubebuilder:rbac:groups="",resources=pods,verbs=list;watch
 //+kubebuilder:rbac:groups="",resources=pods/exec,verbs=create
 //+kubebuilder:rbac:groups="apps",resources=deployments,verbs=create;delete;get;update;list;watch
@@ -129,6 +135,12 @@ func (r *ObjectStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return reconcile.Result{}, fmt.Errorf("failed to configure multisite: %w", err)
 	}
 
+	// Bootstrap my own realm
+	err = r.bootstrapRealm(ctx, objectStore, serviceIP)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to bootstrap realm: %w", err)
+	}
+
 	r.Logger.Info("successfully reconciled", "ObjectStore", req.NamespacedName.String())
 	return ctrl.Result{}, nil
 }
@@ -182,7 +194,7 @@ func (r *ObjectStoreReconciler) configureMultisite(ctx context.Context, objectSt
 			getLabelString(objectStore.Name),
 			"rgw",
 			objectStore.Namespace,
-			append([]string{"radosgw-admin-sqlite"}, buildFinalCLIArgs([]string{"zone", "create", fmt.Sprintf("--realm-token=%s", realmToken), fmt.Sprintf("--endpoints=http://%s:%d", serviceIP, objectStore.Spec.Gateway.Port)})...)...,
+			append([]string{"rgwam-sqlite"}, []string{"zone", "create", fmt.Sprintf("--realm-token=%s", realmToken), fmt.Sprintf("--endpoints=http://%s:%d", serviceIP, objectStore.Spec.Gateway.Port)}...)...,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create zone: %s. %w", stderr, err)
@@ -191,4 +203,86 @@ func (r *ObjectStoreReconciler) configureMultisite(ctx context.Context, objectSt
 	}
 
 	return nil
+}
+
+// bootstrapRealm bootstrap my own realm in case another gw wants to connect with me
+func (r *ObjectStoreReconciler) bootstrapRealm(ctx context.Context, objectStore *objectv1alpha1.ObjectStore, serviceIP string) error {
+	secret := &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "object-store-realm-token",
+			Namespace: objectStore.Namespace,
+		},
+	}
+	err := controllerutil.SetControllerReference(objectStore, secret, r.Scheme)
+	if err != nil {
+		return fmt.Errorf("failed to set owner reference to secret %q: %w", secret.Name, err)
+	}
+
+	// Create zone within realm
+	realms, err := r.getRealms(ctx, objectStore)
+	if err != nil {
+		return fmt.Errorf("failed to get realms: %w", err)
+	}
+	if len(realms) > 0 {
+		r.Logger.Info("realm already exists", "realm", realms[0])
+		return nil
+	}
+
+	output, stderr, err := r.RemotePodCommandExecutor.ExecCommandInContainerWithFullOutputWithTimeout(
+		ctx,
+		getLabelString(objectStore.Name),
+		"rgw",
+		objectStore.Namespace,
+		append([]string{"rgwam-sqlite"}, []string{"realm", "bootstrap", fmt.Sprintf("--endpoints=http://%s:%d", serviceIP, objectStore.Spec.Gateway.Port)}...)...,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to bootstrap realm: %s. %w", stderr, err)
+	}
+
+	// Parse the output to get the token
+	outputParse := regexp.MustCompile(`^Realm Token: (\S+)$`).FindStringSubmatch(output)
+	if len(outputParse) != 2 {
+		return fmt.Errorf("failed to parse realm token from output: %s", output)
+	}
+
+	token := outputParse[1]
+	if isBase64Encoded(token) {
+		// Create secret with the token
+		secret.Data = map[string][]byte{"token": []byte(token)}
+
+		err := r.Client.Create(ctx, secret)
+		if err != nil {
+			if kerrors.IsAlreadyExists(err) {
+				r.Logger.Info("Realm Secret", secret.Name, "already exists")
+				return nil
+			}
+			return fmt.Errorf("failed to create realm token secret: %w", err)
+		}
+
+	} else {
+		return fmt.Errorf("failed to parse realm token")
+	}
+
+	return nil
+}
+
+func (r *ObjectStoreReconciler) getRealms(ctx context.Context, objectStore *objectv1alpha1.ObjectStore) ([]string, error) {
+	output, stderr, err := r.RemotePodCommandExecutor.ExecCommandInContainerWithFullOutputWithTimeout(
+		ctx,
+		getLabelString(objectStore.Name),
+		"rgw",
+		objectStore.Namespace,
+		append([]string{"radosgw-admin-sqlite"}, buildFinalCLIArgs([]string{"realm", "list"})...)...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list realm: %s. %w", stderr, err)
+	}
+
+	var realm realmSpec
+	err = json.Unmarshal([]byte(output), &realm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal realms %w", err)
+	}
+
+	return realm.Realms, nil
 }

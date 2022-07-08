@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -95,6 +96,9 @@ func DaemonEnvVars(image string) []v1.EnvVar {
 		{Name: "POD_NAMESPACE", ValueFrom: &v1.EnvVarSource{FieldRef: &v1.ObjectFieldSelector{FieldPath: "metadata.namespace"}}},
 		{Name: "NODE_NAME", ValueFrom: &v1.EnvVarSource{FieldRef: &v1.ObjectFieldSelector{FieldPath: "spec.nodeName"}}},
 		{Name: "CEPH_LIB", Value: "/usr/lib64/rados-classes"},
+		// TODO: remove me once rgwam-sqlite supports all radosgw-sqlite-admin flags, currently if
+		// fails with unknown args when passing --librados-sqlite-data-dir=/var/lib/ceph/radosgw/data
+		{Name: "CEPH_ARGS", Value: "--librados-sqlite-data-dir=/var/lib/ceph/radosgw/data --no-mon-config"},
 	}
 }
 
@@ -127,4 +131,11 @@ func hash(s string) string {
 
 func buildFinalCLIArgs(args []string) []string {
 	return append(defaultFlags(), args...)
+}
+
+// isBase64Encoded returns whether the keyring is valid
+func isBase64Encoded(keyring string) bool {
+	// If the keyring is not base64 we fail
+	_, err := base64.StdEncoding.DecodeString(keyring)
+	return err == nil
 }
