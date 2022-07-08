@@ -17,25 +17,47 @@ limitations under the License.
 package v1alpha1
 
 import (
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // ObjectStoreSpec defines the desired state of ObjectStore
 type ObjectStoreSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Image is the container image to use for the ObjectStore.
+	Image string `json:"image"`
 
-	// Foo is an example field of ObjectStore. Edit objectstore_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// Important: Run "make" to regenerate code after modifying this file
+	// The rgw pod info
+	// +optional
+	// +nullable
+	Gateway GatewaySpec `json:"gateway"`
+
+	// Multisite is the multisite configuration
+	// +optional
+	Multisite *MultisiteSpec `json:"multisite,omitempty"`
+
+	// VolumeClaimTemplate is the PVC definition
+	VolumeClaimTemplate *v1.PersistentVolumeClaim `json:"volumeClaimTemplate,omitempty"`
+}
+
+// GatewaySpec represents the specification of Ceph Object Store Gateway
+type GatewaySpec struct {
+	// The port the rgw service will be listening on (http)
+	// +optional
+	Port int32 `json:"port,omitempty"`
+}
+
+type MultisiteSpec struct {
+	// RealmTokenSecretName is the name of the Kubernetes Secret that contains the realm token
+	// It is used to bootstrap the Zone
+	// +optional
+	RealmTokenSecretName string `json:"realmTokenSecretName,omitempty"`
 }
 
 // ObjectStoreStatus defines the observed state of ObjectStore
 type ObjectStoreStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// +optional
+	Phase string `json:"phase,omitempty"`
 }
 
 //+kubebuilder:object:root=true
@@ -60,5 +82,13 @@ type ObjectStoreList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&ObjectStore{}, &ObjectStoreList{})
+	//SchemeBuilder.Register(addKnownTypes)
+	SchemeBuilder.Register(
+		&ObjectStore{},
+		&ObjectStoreList{},
+	)
+}
+
+func (o *ObjectStoreSpec) IsMultisite() bool {
+	return o.Multisite != nil && o.Multisite.RealmTokenSecretName != ""
 }

@@ -3,4 +3,10 @@ kind: ObjectStore
 metadata:
   name: objectstore-sample
 spec:
-  # TODO(user): Add fields here
+  image: quay.ceph.io/ceph-ci/ceph:wip-librados-wrapper-8-af9b01c-centos-stream8-x86_64-devel
+  volumeClaimTemplate:
+    spec:
+      storageClassName: standard
+      resources:
+        requests:
+          storage: 1Gi
