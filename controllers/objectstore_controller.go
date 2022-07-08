@@ -46,6 +46,7 @@ type ObjectStoreReconciler struct {
 //+kubebuilder:rbac:groups=object.rook-s3-nano,resources=objectstores/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=create;delete;get;list
 //+kubebuilder:rbac:groups="",resources=services,verbs=create;delete;get;update;list;watch
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;
 //+kubebuilder:rbac:groups="",resources=pods,verbs=list;watch
 //+kubebuilder:rbac:groups="",resources=pods/exec,verbs=create
 //+kubebuilder:rbac:groups="apps",resources=deployments,verbs=create;delete;get;update;list;watch
@@ -104,7 +105,7 @@ func (r *ObjectStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// Reconcile objectStore service
-	_, err = r.reconcileService(ctx, objectStore)
+	serviceIP, err := r.reconcileService(ctx, objectStore)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to reconcile Service: %w", err)
 	}
@@ -123,17 +124,11 @@ func (r *ObjectStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// Try remote executor
-	output, stderr, err := r.RemotePodCommandExecutor.ExecCommandInContainerWithFullOutputWithTimeout(
-		ctx,
-		getLabelString(objectStore.Name),
-		"rgw",
-		objectStore.Namespace,
-		append([]string{"radosgw-admin-sqlite"}, buildFinalCLIArgs([]string{"user", "list"})...)...,
-	)
+	err = r.configureMultisite(ctx, objectStore, serviceIP)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to execute radosgw-admin-sqlite user list: %s. %w", stderr, err)
+		return reconcile.Result{}, fmt.Errorf("failed to configure multisite: %w", err)
 	}
-	r.Logger.Info("radosgw-admin-sqlite user list output: \n" + output)
+
 	r.Logger.Info("successfully reconciled", "ObjectStore", req.NamespacedName.String())
 	return ctrl.Result{}, nil
 }
@@ -164,6 +159,36 @@ func (r *ObjectStoreReconciler) createPVC(ctx context.Context, objectStore *obje
 		}
 	}
 	r.Logger.Info("successfully provisioned", "PVC", pvc.Name)
+
+	return nil
+}
+
+func (r *ObjectStoreReconciler) configureMultisite(ctx context.Context, objectStore *objectv1alpha1.ObjectStore, serviceIP string) error {
+	if objectStore.Spec.IsMultisite() {
+		secret := &v1.Secret{}
+		err := r.Client.Get(ctx, client.ObjectKey{Namespace: objectStore.Namespace, Name: objectStore.Spec.Multisite.RealmTokenSecretName}, secret)
+		if err != nil {
+			return fmt.Errorf("failed to get realm token secret %q: %w", objectStore.Spec.Multisite.RealmTokenSecretName, err)
+		}
+
+		realmToken := string(secret.Data["token"])
+		if realmToken == "" {
+			return fmt.Errorf("failed to find realm token secret, 'token' key missing or empty?")
+		}
+
+		// Create zone within realm
+		output, stderr, err := r.RemotePodCommandExecutor.ExecCommandInContainerWithFullOutputWithTimeout(
+			ctx,
+			getLabelString(objectStore.Name),
+			"rgw",
+			objectStore.Namespace,
+			append([]string{"radosgw-admin-sqlite"}, buildFinalCLIArgs([]string{"zone", "create", fmt.Sprintf("--realm-token=%s", realmToken), fmt.Sprintf("--endpoints=http://%s:%d", serviceIP, objectStore.Spec.Gateway.Port)})...)...,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create zone: %s. %w", stderr, err)
+		}
+		r.Logger.Info(output)
+	}
 
 	return nil
 }

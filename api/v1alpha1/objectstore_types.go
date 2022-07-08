@@ -32,6 +32,10 @@ type ObjectStoreSpec struct {
 	// +nullable
 	Gateway GatewaySpec `json:"gateway"`
 
+	// Multisite is the multisite configuration
+	// +optional
+	Multisite *MultisiteSpec `json:"multisite,omitempty"`
+
 	// VolumeClaimTemplate is the PVC definition
 	VolumeClaimTemplate *v1.PersistentVolumeClaim `json:"volumeClaimTemplate,omitempty"`
 }
@@ -41,6 +45,13 @@ type GatewaySpec struct {
 	// The port the rgw service will be listening on (http)
 	// +optional
 	Port int32 `json:"port,omitempty"`
+}
+
+type MultisiteSpec struct {
+	// RealmTokenSecretName is the name of the Kubernetes Secret that contains the realm token
+	// It is used to bootstrap the Zone
+	// +optional
+	RealmTokenSecretName string `json:"realmTokenSecretName,omitempty"`
 }
 
 // ObjectStoreStatus defines the observed state of ObjectStore
@@ -76,4 +87,8 @@ func init() {
 		&ObjectStore{},
 		&ObjectStoreList{},
 	)
+}
+
+func (o *ObjectStoreSpec) IsMultisite() bool {
+	return o.Multisite != nil && o.Multisite.RealmTokenSecretName != ""
 }

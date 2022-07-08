@@ -156,6 +156,11 @@ func (r *ObjectStoreReconciler) reconcileService(ctx context.Context, objectStor
 		return "", fmt.Errorf("failed to set owner reference to service %q: %w", service.Name, err)
 	}
 
+	port := int32(8080)
+	if objectStore.Spec.Gateway.Port != 0 {
+		port = objectStore.Spec.Gateway.Port
+	}
+
 	// Create mutate function to update the service
 	mutateFunc := func() error {
 		// If the cluster is not external we add the Selector
@@ -163,7 +168,7 @@ func (r *ObjectStoreReconciler) reconcileService(ctx context.Context, objectStor
 			Selector: getLabels(objectStore.Name),
 		}
 
-		addPort(service, "http", 8080, rgwPortInternalPort)
+		addPort(service, "http", port, rgwPortInternalPort)
 		return nil
 	}
 
@@ -172,7 +177,7 @@ func (r *ObjectStoreReconciler) reconcileService(ctx context.Context, objectStor
 	if err != nil {
 		return "", fmt.Errorf("failed to create or update object store %q service %q: %w", objectStore.Name, opResult, err)
 	}
-	r.Logger.Info("object store gateway service ", "opResult", opResult, "at", service.Spec.ClusterIP)
+	r.Logger.Info("object store gateway service ", "opResult", opResult, "at", service.Spec.ClusterIP, "port", port)
 
 	return service.Spec.ClusterIP, nil
 }
