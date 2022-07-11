@@ -43,15 +43,11 @@ jobs:
         ./hack/ci-helper.sh wait_for_rgw
         kubectl -n rook-s3-nano-system get all -o wide
 
-    - name: consider debugging
-      if: failure() && github.event_name == 'pull_request'
+    - name: run s3 operations
       run: |
-        # Enable tmate only in the Rook fork, where the USE_TMATE secret is set in the repo, or if the action is re-run
-        if [ "$GITHUB_REPOSITORY_OWNER" = "rook" ] || [ -n "${{ secrets.USE_TMATE }}" ] || [ "$GITHUB_RUN_ATTEMPT" -gt 1 ]; then
-          echo USE_TMATE=1 >> $GITHUB_ENV
-        fi
+        ./hack/ci-helper.sh run_s3_ops
 
     - name: set up tmate session for debugging
-      if: failure() && env.USE_TMATE
+      if: failure()
       uses: mxschmitt/action-tmate@v3
       timeout-minutes: 60
