@@ -128,6 +128,8 @@ func (r *ObjectStoreReconciler) makeDaemonContainer(objectStore *objectv1alpha1.
 			newFlag("host", ContainerEnvVarReference(podNameEnvVar)),
 			// TODO: remove me one day? - currently it's helpful to see the DB's initialization progress
 			newFlag("debug rgw", "15"),
+			// TODO: remove me once caching is fixed
+			newFlag("rgw cache enabled", "false"),
 		),
 		VolumeMounts: []v1.VolumeMount{daemonVolumeMountPVC()},
 		Env:          DaemonEnvVars(objectStore.Spec.Image),

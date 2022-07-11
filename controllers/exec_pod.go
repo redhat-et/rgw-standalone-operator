@@ -78,6 +78,7 @@ func NewExecutor(clientSet kubernetes.Interface, restClient *rest.Config, logger
 func (e *RemotePodCommandExecutor) ExecWithOptions(options ExecOptions) (string, string, error) {
 	const tty = false
 
+	// Be careful this can leak the realm tokens
 	e.Logger.Info("ExecWithOptions", "Options", options)
 
 	req := e.ClientSet.CoreV1().RESTClient().Post().

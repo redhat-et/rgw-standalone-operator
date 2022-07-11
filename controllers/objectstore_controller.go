@@ -52,7 +52,7 @@ type realmSpec struct {
 //+kubebuilder:rbac:groups=object.rook-s3-nano,resources=objectstores/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=create;delete;get;list
 //+kubebuilder:rbac:groups="",resources=services,verbs=create;delete;get;update;list;watch
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;list;watch
 //+kubebuilder:rbac:groups="",resources=pods,verbs=list;watch
 //+kubebuilder:rbac:groups="",resources=pods/exec,verbs=create
 //+kubebuilder:rbac:groups="apps",resources=deployments,verbs=create;delete;get;update;list;watch
@@ -130,16 +130,20 @@ func (r *ObjectStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return reconcile.Result{}, fmt.Errorf("failed to wait for pods to be ready: %w", err)
 	}
 
-	// Try remote executor
-	err = r.configureMultisite(ctx, objectStore, serviceIP)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to configure multisite: %w", err)
+	// Configure multisite will import the realm token from the main site
+	if objectStore.Spec.IsMultisite() {
+		err = r.configureMultisite(ctx, objectStore, serviceIP)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to configure multisite: %w", err)
+		}
 	}
 
 	// Bootstrap my own realm
-	err = r.bootstrapRealm(ctx, objectStore, serviceIP)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to bootstrap realm: %w", err)
+	if objectStore.Spec.IsMainSite() {
+		err = r.bootstrapRealm(ctx, objectStore, serviceIP)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to bootstrap realm: %w", err)
+		}
 	}
 
 	r.Logger.Info("successfully reconciled", "ObjectStore", req.NamespacedName.String())
@@ -177,31 +181,38 @@ func (r *ObjectStoreReconciler) createPVC(ctx context.Context, objectStore *obje
 }
 
 func (r *ObjectStoreReconciler) configureMultisite(ctx context.Context, objectStore *objectv1alpha1.ObjectStore, serviceIP string) error {
-	if objectStore.Spec.IsMultisite() {
-		secret := &v1.Secret{}
-		err := r.Client.Get(ctx, client.ObjectKey{Namespace: objectStore.Namespace, Name: objectStore.Spec.Multisite.RealmTokenSecretName}, secret)
-		if err != nil {
-			return fmt.Errorf("failed to get realm token secret %q: %w", objectStore.Spec.Multisite.RealmTokenSecretName, err)
-		}
+	secret := &v1.Secret{}
+	err := r.Client.Get(ctx, client.ObjectKey{Namespace: objectStore.Namespace, Name: objectStore.Spec.Multisite.RealmTokenSecretName}, secret)
+	if err != nil {
+		return fmt.Errorf("failed to get realm token secret %q: %w", objectStore.Spec.Multisite.RealmTokenSecretName, err)
+	}
 
-		realmToken := string(secret.Data["token"])
-		if realmToken == "" {
-			return fmt.Errorf("failed to find realm token secret, 'token' key missing or empty?")
-		}
+	realmToken := string(secret.Data["token"])
+	if realmToken == "" {
+		return fmt.Errorf("failed to find realm token secret, 'token' key missing or empty?")
+	}
 
-		// Create zone within realm
-		output, stderr, err := r.RemotePodCommandExecutor.ExecCommandInContainerWithFullOutputWithTimeout(
-			ctx,
-			getLabelString(objectStore.Name),
-			"rgw",
-			objectStore.Namespace,
-			append([]string{"rgwam-sqlite"}, []string{"zone", "create", fmt.Sprintf("--realm-token=%s", realmToken), fmt.Sprintf("--endpoints=http://%s:%d", serviceIP, objectStore.Spec.Gateway.Port)}...)...,
-		)
-		if err != nil {
+	port := int32(8080)
+	if objectStore.Spec.Gateway.Port != 0 {
+		port = objectStore.Spec.Gateway.Port
+	}
+
+	// Create zone within realm
+	output, stderr, err := r.RemotePodCommandExecutor.ExecCommandInContainerWithFullOutputWithTimeout(
+		ctx,
+		getLabelString(objectStore.Name),
+		"rgw",
+		objectStore.Namespace,
+		append([]string{"rgwam-sqlite"}, []string{"zone", "create", fmt.Sprintf("--realm-token=%s", realmToken), fmt.Sprintf("--endpoints=http://%s:%d", serviceIP, port)}...)...,
+	)
+	// TODO: re-add this once rgwam-sqlite stops logging to stderr
+	// if err != nil || stderr != "" {
+	if err != nil {
+		if code, err := extractExitCode(err); err == nil && code != 0 {
 			return fmt.Errorf("failed to create zone: %s. %w", stderr, err)
 		}
-		r.Logger.Info(output)
 	}
+	r.Logger.Info(output)
 
 	return nil
 }
@@ -229,15 +240,24 @@ func (r *ObjectStoreReconciler) bootstrapRealm(ctx context.Context, objectStore 
 		return nil
 	}
 
+	port := int32(8080)
+	if objectStore.Spec.Gateway.Port != 0 {
+		port = objectStore.Spec.Gateway.Port
+	}
+
 	output, stderr, err := r.RemotePodCommandExecutor.ExecCommandInContainerWithFullOutputWithTimeout(
 		ctx,
 		getLabelString(objectStore.Name),
 		"rgw",
 		objectStore.Namespace,
-		append([]string{"rgwam-sqlite"}, []string{"realm", "bootstrap", fmt.Sprintf("--endpoints=http://%s:%d", serviceIP, objectStore.Spec.Gateway.Port)}...)...,
+		append([]string{"rgwam-sqlite"}, []string{"realm", "bootstrap", fmt.Sprintf("--endpoints=http://%s:%d", serviceIP, port)}...)...,
 	)
+	// TODO: re-add this once rgwam-sqlite stops logging to stderr
+	// if err != nil || stderr != "" {
 	if err != nil {
-		return fmt.Errorf("failed to bootstrap realm: %s. %w", stderr, err)
+		if code, err := extractExitCode(err); err == nil && code != 0 {
+			return fmt.Errorf("failed to bootstrap realm: %s. %w", stderr, err)
+		}
 	}
 
 	// Parse the output to get the token
@@ -275,8 +295,10 @@ func (r *ObjectStoreReconciler) getRealms(ctx context.Context, objectStore *obje
 		objectStore.Namespace,
 		append([]string{"radosgw-admin-sqlite"}, buildFinalCLIArgs([]string{"realm", "list"})...)...,
 	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list realm: %s. %w", stderr, err)
+	if err != nil || stderr != "" {
+		if code, err := extractExitCode(err); err == nil && code != 0 {
+			return nil, fmt.Errorf("failed to list realm: %s. %w", stderr, err)
+		}
 	}
 
 	var realm realmSpec

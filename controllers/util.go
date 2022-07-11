@@ -21,10 +21,14 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"os/exec"
+	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/leseb/rook-s3-nano/api/v1alpha1"
 	v1 "k8s.io/api/core/v1"
+	kexec "k8s.io/utils/exec"
 )
 
 // normalizeKey converts a key in any format to a key with underscores.
@@ -102,7 +106,7 @@ func DaemonEnvVars(image string) []v1.EnvVar {
 		{Name: "CEPH_LIB", Value: "/usr/lib64/rados-classes"},
 		// TODO: remove me once rgwam-sqlite supports all radosgw-sqlite-admin flags, currently if
 		// fails with unknown args when passing --librados-sqlite-data-dir=/var/lib/ceph/radosgw/data
-		{Name: "CEPH_ARGS", Value: "--librados-sqlite-data-dir=/var/lib/ceph/radosgw/data --no-mon-config --conf=/etc/ceph/rbdmap"},
+		{Name: "CEPH_ARGS", Value: "--librados-sqlite-data-dir=/var/lib/ceph/radosgw/data --no-mon-config --conf=/etc/ceph/rbdmap --auth-client-required=none --auth-service-required=none --auth-cluster-required=none"},
 	}
 }
 
@@ -142,4 +146,27 @@ func isBase64Encoded(keyring string) bool {
 	// If the keyring is not base64 we fail
 	_, err := base64.StdEncoding.DecodeString(keyring)
 	return err == nil
+}
+
+func extractExitCode(err error) (int, error) {
+	switch errType := err.(type) {
+	case *exec.ExitError:
+		return errType.ExitCode(), nil
+
+	case *kexec.CodeExitError:
+		return errType.ExitStatus(), nil
+
+	// have to check both *kexec.CodeExitError and kexec.CodeExitError because CodeExitError methods
+	// are not defined with pointer receivers; both pointer and non-pointers are valid `error`s.
+	case kexec.CodeExitError:
+		return errType.ExitStatus(), nil
+
+	default:
+		// This is ugly, but it's a decent backup just in case the error isn't a type above.
+		if strings.Contains(err.Error(), "command terminated with exit code") {
+			a := strings.SplitAfter(err.Error(), "command terminated with exit code")
+			return strconv.Atoi(strings.TrimSpace(a[1]))
+		}
+		return -1, fmt.Errorf("error %#v is an unknown error type: %v", err, reflect.TypeOf(err))
+	}
 }
