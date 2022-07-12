@@ -67,6 +67,10 @@ func defaultFlags() []string {
 		newFlag("auth-client-required", "none"),
 		newFlag("auth-service-required", "none"),
 		newFlag("auth-cluster-required", "none"),
+
+		// dummy ceph.conf so that ceph doesn't complain about missing config file
+		// Ceph does not care whether the content is correct or not
+		newFlag("conf", "/etc/ceph/rbdmap"),
 	}
 }
 
@@ -98,7 +102,7 @@ func DaemonEnvVars(image string) []v1.EnvVar {
 		{Name: "CEPH_LIB", Value: "/usr/lib64/rados-classes"},
 		// TODO: remove me once rgwam-sqlite supports all radosgw-sqlite-admin flags, currently if
 		// fails with unknown args when passing --librados-sqlite-data-dir=/var/lib/ceph/radosgw/data
-		{Name: "CEPH_ARGS", Value: "--librados-sqlite-data-dir=/var/lib/ceph/radosgw/data --no-mon-config"},
+		{Name: "CEPH_ARGS", Value: "--librados-sqlite-data-dir=/var/lib/ceph/radosgw/data --no-mon-config --conf=/etc/ceph/rbdmap"},
 	}
 }
 
