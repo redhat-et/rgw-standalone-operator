@@ -67,14 +67,15 @@ func (r *ObjectStoreReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 func (r *ObjectStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.Logger.Info("reconciling", "ObjectStore", req.NamespacedName.String())
+	r.Logger = ctrl.Log.WithValues("ObjectStore", req.NamespacedName.String())
+	r.Logger.Info("reconciling")
 
 	// Fetch the cephObjectStore instance
 	objectStore := &objectv1alpha1.ObjectStore{}
 	err := r.Client.Get(ctx, req.NamespacedName, objectStore)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			r.Logger.Info("cephObjectStore resource not found. Ignoring since object must be deleted.", "ObjectStore", req.NamespacedName.String())
+			r.Logger.Info("cephObjectStore resource not found. Ignoring since object must be deleted.")
 
 			return reconcile.Result{}, nil
 		}
@@ -124,7 +125,7 @@ func (r *ObjectStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	r.Logger.Info("successful deployment " + string(reconcileResult))
 
 	// Wait for the pod to be ready
-	err = r.waitForLabeledPodsToRunWithRetries(ctx, getLabels(objectStore.Name), 5)
+	err = r.waitForLabeledPodsToRunWithRetries(ctx, objectStore, 5)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to wait for pods to be ready: %w", err)
 	}

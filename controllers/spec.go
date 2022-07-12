@@ -244,13 +244,16 @@ func podSecurityContext() *v1.SecurityContext {
 	}
 }
 
-func (r *ObjectStoreReconciler) waitForLabeledPodsToRunWithRetries(ctx context.Context, labels map[string]string, retries int) error {
+func (r *ObjectStoreReconciler) waitForLabeledPodsToRunWithRetries(ctx context.Context, objectStore *objectv1alpha1.ObjectStore, retries int) error {
 	const retryInterval = 5
-
+	labels := getLabels(objectStore.Name)
+	opts := []controllerclient.ListOption{
+		controllerclient.InNamespace(objectStore.Namespace),
+		controllerclient.MatchingLabels(labels),
+	}
 	podList := &v1.PodList{}
-	var lastPod v1.Pod
 	for i := 0; i < retries; i++ {
-		err := r.Client.List(ctx, podList, controllerclient.MatchingLabels(labels))
+		err := r.Client.List(ctx, podList, opts...)
 		lastStatus := ""
 		running := 0
 		if err == nil && len(podList.Items) > 0 {
@@ -258,7 +261,6 @@ func (r *ObjectStoreReconciler) waitForLabeledPodsToRunWithRetries(ctx context.C
 				if pod.Status.Phase == "Running" {
 					running++
 				}
-				lastPod = pod
 				lastStatus = string(pod.Status.Phase)
 			}
 			if running == len(podList.Items) {
@@ -268,10 +270,6 @@ func (r *ObjectStoreReconciler) waitForLabeledPodsToRunWithRetries(ctx context.C
 		}
 		r.Logger.Info("waiting for", "pod(s) with label", labels, "status", lastStatus, "running", running, "numPod", len(podList.Items), "Error", err)
 		time.Sleep(retryInterval * time.Second)
-	}
-
-	if len(lastPod.Name) == 0 {
-		return fmt.Errorf("no pod was found with label %v", labels)
 	}
 
 	return fmt.Errorf("giving up waiting for pod with label %v to be running", labels)
