@@ -25,9 +25,13 @@ import (
 	objectv1alpha1 "github.com/leseb/rook-s3-nano/api/v1alpha1"
 
 	apps "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
 	controllerclient "sigs.k8s.io/controller-runtime/pkg/client"
 	controllerutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -37,6 +41,7 @@ const (
 	appName                        = "rgw"
 	podNameEnvVar                  = "POD_NAME"
 	objectStoreDataDirectory       = "/var/lib/ceph/radosgw/data"
+	x
 )
 
 var (
@@ -44,7 +49,7 @@ var (
 	CephUID int64 = 167
 )
 
-func (r *ObjectStoreReconciler) createOrUpdateDeployment(ctx context.Context, objectStore *objectv1alpha1.ObjectStore) (controllerutil.OperationResult, error) {
+func (r *ObjectStoreReconciler) createOrUpdateDeployment(ctx context.Context, objectStore *objectv1alpha1.ObjectStore, endpoint string) (controllerutil.OperationResult, error) {
 	deploy := &apps.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instanceName(objectStore.Name, objectStore.Namespace),
@@ -60,7 +65,7 @@ func (r *ObjectStoreReconciler) createOrUpdateDeployment(ctx context.Context, ob
 	}
 
 	mutateFunc := func() error {
-		pod, err := r.makeRGWPodSpec(objectStore)
+		pod, err := r.makeRGWPodSpec(objectStore, endpoint)
 		if err != nil {
 			return err
 		}
@@ -78,7 +83,7 @@ func (r *ObjectStoreReconciler) createOrUpdateDeployment(ctx context.Context, ob
 	return controllerutil.CreateOrUpdate(ctx, r.Client, deploy, mutateFunc)
 }
 
-func (r *ObjectStoreReconciler) makeRGWPodSpec(objectStore *objectv1alpha1.ObjectStore) (v1.PodTemplateSpec, error) {
+func (r *ObjectStoreReconciler) makeRGWPodSpec(objectStore *objectv1alpha1.ObjectStore, endpoint string) (v1.PodTemplateSpec, error) {
 	rgwDaemonContainer := r.makeDaemonContainer(objectStore)
 	if reflect.DeepEqual(rgwDaemonContainer, v1.Container{}) {
 		return v1.PodTemplateSpec{}, fmt.Errorf("got empty container for RGW daemon")
@@ -108,6 +113,11 @@ func (r *ObjectStoreReconciler) makeRGWPodSpec(objectStore *objectv1alpha1.Objec
 			Labels: getLabels(objectStore.Name),
 		},
 		Spec: podSpec,
+	}
+
+	if objectStore.Spec.IsMultisite() {
+		podSpec.InitContainers = append(podSpec.InitContainers, createZoneContainer(objectStore, endpoint))
+
 	}
 
 	return podTemplateSpec, nil
@@ -236,6 +246,17 @@ func chownCephDataDirsInitContainer(
 	}
 }
 
+func createZoneContainer(objectStore *objectv1alpha1.ObjectStore, endpoint string) v1.Container {
+	return v1.Container{
+		Name:         "object-store-multisite-create-zone",
+		Image:        objectStore.Spec.Image,
+		Command:      []string{"rgwam-sqlite"},
+		Args:         []string{"zone", "create", fmt.Sprintf("--zone=%s-%s", objectStore.Name, objectStore.Namespace), "--realm-token=$(REALM_TOKEN)", fmt.Sprintf("--endpoints=%s", endpoint)},
+		VolumeMounts: []v1.VolumeMount{daemonVolumeMountPVC()},
+		Env:          append(DaemonEnvVars(objectStore.Spec.Image), realmTokenSecretEnv(objectStore.Spec.Multisite.RealmTokenSecretName)),
+	}
+}
+
 // podSecurityContextPrivileged returns a privileged PodSecurityContext.
 func podSecurityContext() *v1.SecurityContext {
 	var root int64 = 0
@@ -246,8 +267,8 @@ func podSecurityContext() *v1.SecurityContext {
 	}
 }
 
-func (r *ObjectStoreReconciler) waitForLabeledPodsToRunWithRetries(ctx context.Context, objectStore *objectv1alpha1.ObjectStore, retries int) error {
-	const retryInterval = 5
+func (r *ObjectStoreReconciler) waitForLabeledPodsToRunWithRetries(ctx context.Context, objectStore *objectv1alpha1.ObjectStore, retries int) (v1.Pod, error) {
+	const retryInterval = 30
 	labels := getLabels(objectStore.Name)
 	opts := []controllerclient.ListOption{
 		controllerclient.InNamespace(objectStore.Namespace),
@@ -267,12 +288,101 @@ func (r *ObjectStoreReconciler) waitForLabeledPodsToRunWithRetries(ctx context.C
 			}
 			if running == len(podList.Items) {
 				r.Logger.Info("all pod(s) running", "Pods", len(podList.Items), "label", labels)
-				return nil
+				return podList.Items[0], nil
 			}
 		}
 		r.Logger.Info("waiting for", "pod(s) with label", labels, "status", lastStatus, "running", running, "numPod", len(podList.Items), "Error", err)
 		time.Sleep(retryInterval * time.Second)
 	}
 
-	return fmt.Errorf("giving up waiting for pod with label %v to be running", labels)
+	return v1.Pod{}, fmt.Errorf("giving up waiting for pod with label %v to be running", labels)
+}
+
+func (r *ObjectStoreReconciler) waitForJobCompletion(ctx context.Context, job *batchv1.Job, timeout time.Duration) error {
+	r.Logger.Info("waiting for job to complete...", "job", job.Name)
+	return wait.Poll(5*time.Second, timeout, func() (bool, error) {
+		err := r.Client.Get(ctx, types.NamespacedName{Name: job.Name, Namespace: job.Namespace}, job)
+		if err != nil {
+			return false, fmt.Errorf("failed to get job %s. %v", job.Name, err)
+		}
+
+		// if the job is still running, allow it to continue to completion
+		if job.Status.Active > 0 {
+			r.Logger.Info("job is still running", "Status", job.Status)
+			return false, nil
+		}
+		if job.Status.Failed > 0 {
+			// TODO: show logs in the op
+			// We need to use client-go for this not the controller-runtime client...
+			return false, fmt.Errorf("job %s failed", job.Name)
+		}
+		if job.Status.Succeeded > 0 {
+			return true, nil
+		}
+		r.Logger.Info("job is still initializing")
+		return false, nil
+	})
+}
+
+func multisiteJobMeta(objectStore *objectv1alpha1.ObjectStore) *batchv1.Job {
+	return &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "object-store-multisite-zone-job",
+			Namespace: objectStore.Namespace,
+		},
+	}
+}
+
+// Create multisite zone job
+func (r *ObjectStoreReconciler) createMultisiteZoneJob(ctx context.Context, objectStore *objectv1alpha1.ObjectStore, endpoint string) error {
+	job := multisiteJobMeta(objectStore)
+	backoffLimit := int32(600)
+	job.Spec = batchv1.JobSpec{
+		Template: v1.PodTemplateSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{
+					"app": "object-store-multisite-zone-job",
+				},
+			},
+			Spec: v1.PodSpec{
+				Containers: []v1.Container{
+					{
+						Name:         "object-store-multisite-zone-job",
+						Image:        objectStore.Spec.Image,
+						Command:      []string{"rgwam-sqlite"},
+						Args:         []string{"zone", "create", fmt.Sprintf("--zone=%s-%s", objectStore.Name, objectStore.Namespace), "--realm-token=$(REALM_TOKEN)", fmt.Sprintf("--endpoints=%s", endpoint)},
+						VolumeMounts: []v1.VolumeMount{daemonVolumeMountPVC()},
+						Env:          append(DaemonEnvVars(objectStore.Spec.Image), realmTokenSecretEnv(objectStore.Spec.Multisite.RealmTokenSecretName)),
+					},
+				},
+				Volumes: []v1.Volume{
+					DaemonVolumesDataPVC(instanceName(objectStore.Name, objectStore.Namespace)),
+				},
+				RestartPolicy: v1.RestartPolicyOnFailure,
+			},
+		},
+		BackoffLimit: &backoffLimit,
+	}
+
+	// Set ObjectStore instance as the owner and controller of the Job.
+	err := controllerutil.SetControllerReference(objectStore, job, r.Scheme)
+	if err != nil {
+		return fmt.Errorf("failed to set owner reference to job %q: %w", job.Name, err)
+	}
+
+	err = r.Client.Create(ctx, job)
+	if err != nil {
+		if kerrors.IsAlreadyExists(err) {
+			// TODO: delete it and create it again?
+			if job.Status.Failed > 0 {
+				// Recreate it
+			} else if job.Status.Succeeded > 0 {
+				r.Logger.Info("Multisite Zone Job", job.Name, "already exists")
+				return nil
+			}
+		}
+		return fmt.Errorf("failed to create multisite zone job: %w", err)
+	}
+
+	return nil
 }

@@ -129,16 +129,26 @@ func daemonVolumeMountPVC() v1.VolumeMount {
 	}
 }
 
+func realmTokenSecretEnv(secretName string) v1.EnvVar {
+	return v1.EnvVar{
+		Name: "REALM_TOKEN",
+		ValueFrom: &v1.EnvVarSource{
+			SecretKeyRef: &v1.SecretKeySelector{
+				LocalObjectReference: v1.LocalObjectReference{
+					Name: secretName,
+				},
+				Key: "token",
+			},
+		},
+	}
+}
+
 // Hash stableName computes a stable pseudorandom string suitable for inclusion in a Kubernetes object name from the given seed string.
 // Do **NOT** edit this function in a way that would change its output as it needs to
 // provide consistent mappings from string to hash across versions of rook.
 func hash(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:16])
-}
-
-func buildFinalCLIArgs(args []string) []string {
-	return append(defaultFlags(), args...)
 }
 
 // isBase64Encoded returns whether the keyring is valid

@@ -47,9 +47,23 @@ jobs:
       run: |
         ./hack/ci-helper.sh wait_for_rgw edge
 
+    - name: copy realm token from edge to core
+      timeout-minutes: 1
+      run: |
+        until kubectl -n edge get secret object-store-realm-token; do
+          echo "Waiting for object-store-realm-token secret to be created..."
+          sleep 1
+        done
+        kubectl -n edge get secret object-store-realm-token -o yaml > edge-object-store-realm-token.yaml
+        yq delete --inplace edge-object-store-realm-token.yaml metadata.ownerReferences
+        yq write --inplace edge-object-store-realm-token.yaml metadata.namespace core
+        yq write --inplace edge-object-store-realm-token.yaml metadata.name edge-object-store-realm-token
+
+
     - name: create a new gateway on core
       run: |
         kubectl create ns core
+        kubectl create -f edge-object-store-realm-token.yaml
         kubectl -n core create -f config/samples/object_v1alpha1_objectstore.yaml
 
     - name: wait for core rgw to be ready
@@ -62,27 +76,15 @@ jobs:
         kubectl -n edge get all -o yaml
         kubectl -n core get all -o yaml
 
-    - name: copy realm token from edge to core
-      run: |
-        kubectl -n edge get secret object-store-realm-token -o yaml > edge-object-store-realm-token.yaml
-        yq delete --inplace edge-object-store-realm-token.yaml metadata.ownerReferences
-        yq write --inplace edge-object-store-realm-token.yaml metadata.namespace core
-        yq write --inplace edge-object-store-realm-token.yaml metadata.name edge-object-store-realm-token
-        kubectl create -f edge-object-store-realm-token.yaml
-
-    - name: add edge realm token to core CR spec
-      run: |
-        kubectl -n core patch objectstores.object.rook-s3-nano objectstore-sample --type merge -p '{"spec":{"multisite":{"realmTokenSecretName": "edge-object-store-realm-token"}}}'
-
     - name: run s3 operations on edge
       run: |
         ./hack/ci-helper.sh run_s3_ops edge write
 
     - name: verify data from edge have been synced to core
+      timeout-minutes: 1
       run: |
-        # TODO: remove the sleep once we wait for CR status
-        sleep 30
-        ./hack/ci-helper.sh run_s3_ops core read
+        until ./hack/ci-helper.sh run_s3_ops core read; do echo "Waiting for data to be synced..."; sleep 1; done
+        until ./hack/ci-helper.sh run_s3_ops edge read; do echo "Waiting for data to be synced..."; sleep 1; done
 
     - name: set up tmate session for debugging
       if: failure()

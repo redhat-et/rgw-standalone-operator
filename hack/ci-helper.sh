@@ -32,8 +32,7 @@ function install_s5cmd() {
 function get_s3_creds() {
   ns=$1
   kubectl -n "$1" exec deploy/rgw-objectstore-sample-"$ns" -- radosgw-admin-sqlite user create --uid="$ns" --display-name="ci demo user" --access-key=foo --secret-key=bar
-  export AWS_ACCESS_KEY_ID=foo
-  export AWS_SECRET_ACCESS_KEY=bar
+
 }
 
 function run_s3_ops() {
@@ -41,10 +40,12 @@ function run_s3_ops() {
   action=$2
   install_s5cmd
   ip=$(kubectl -n "$ns" get svc rgw-objectstore-sample-"$ns" -o jsonpath='{.spec.clusterIP}')
-  get_s3_creds "$ns"
+  export AWS_ACCESS_KEY_ID=foo
+  export AWS_SECRET_ACCESS_KEY=bar
   curl http://"$ip":8080
   echo -n
   if [[ "$action" == "write" ]]; then
+    get_s3_creds "$ns"
     s5cmd --no-verify-ssl --endpoint-url http://"$ip":8080 mb s3://foo
     s5cmd --no-verify-ssl --endpoint-url http://"$ip":8080 sync . s3://foo
     s5cmd --no-verify-ssl --endpoint-url http://"$ip":8080 ls s3://foo

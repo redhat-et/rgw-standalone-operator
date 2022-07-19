@@ -10,3 +10,5 @@ spec:
       resources:
         requests:
           storage: 1Gi
+  multisite:
+    realmTokenSecretName: edge-object-store-realm-token
