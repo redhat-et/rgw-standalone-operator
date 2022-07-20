@@ -1,80 +1,20 @@
-# rook-s3-nano
-// TODO(user): Add simple overview of use/purpose
-
+# Standalone Object Storage for Edge Computing
+Kubernetes [Operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) that deploys, configure and maintains a fully S3 compliant standalone object storage for edge computing.
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+A project that leverages the modularity of Ceph to provide a standalone object storage based on the
+Ceph RADOS gateway (RGW), that is not backed by RADOS. This provides both the rich capabilities and
+featureset that RGW has (S3 compatibility, security features, multisite, etc.), and also allows it
+to run in a lower resources environment and simplifies its deployment which makes it a possible
+solution for environments such as Edge. The solution is based on implementing an alternative
+librados that allows plugging in different backends, and at first iteration an SQLite based backend.
 
 ## Getting Started
-You’ll need a Kubernetes cluster to run against. You can use [KIND](https://sigs.k8s.io/kind) to get a local cluster for testing, or run against a remote cluster.
-**Note:** Your controller will automatically use the current context in your kubeconfig file (i.e. whatever cluster `kubectl cluster-info` shows).
 
-### Running on the cluster
-1. Install Instances of Custom Resources:
-
-```sh
-kubectl apply -f config/samples/
-```
-
-2. Build and push your image to the location specified by `IMG`:
-	
-```sh
-make docker-build docker-push IMG=<some-registry>/rook-s3-nano:tag
-```
-	
-3. Deploy the controller to the cluster with the image specified by `IMG`:
-
-```sh
-make deploy IMG=<some-registry>/rook-s3-nano:tag
-```
-
-### Uninstall CRDs
-To delete the CRDs from the cluster:
-
-```sh
-make uninstall
-```
-
-### Undeploy controller
-UnDeploy the controller to the cluster:
-
-```sh
-make undeploy
-```
+For installation, deployment, and administration, see our [Documentation](docs/INSTALL.md).
 
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
 
-### How it works
-This project aims to follow the Kubernetes [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)
-
-It uses [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/) 
-which provides a reconcile function responsible for synchronizing resources untile the desired state is reached on the cluster 
-
-### Test It Out
-1. Install the CRDs into the cluster:
-
-```sh
-make install
-```
-
-2. Run your controller (this will run in the foreground, so switch to a new terminal if you want to leave it running):
-
-```sh
-make run
-```
-
-**NOTE:** You can also run this in one step by running: `make install run`
-
-### Modifying the API definitions
-If you are editing the API definitions, generate the manifests such as CRs or CRDs using:
-
-```sh
-make manifests
-```
-
-**NOTE:** Run `make --help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+We welcome contributions. See [Contributing](docs/CONTRIBUTING.md) to get started.
 
 ## License
 
@@ -91,4 +31,3 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-
