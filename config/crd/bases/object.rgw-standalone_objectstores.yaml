@@ -5,9 +5,9 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.8.0
   creationTimestamp: null
-  name: objectstores.object.rook-s3-nano
+  name: objectstores.object.rgw-standalone
 spec:
-  group: object.rook-s3-nano
+  group: object.rgw-standalone
   names:
     kind: ObjectStore
     listKind: ObjectStoreList

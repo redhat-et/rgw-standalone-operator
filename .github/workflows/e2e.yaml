@@ -72,7 +72,7 @@ jobs:
 
     - name: print op and cr status
       run: |
-        kubectl -n rook-s3-nano-system get all -o wide
+        kubectl -n rgw-standalone-system get all -o wide
         kubectl -n edge get all -o yaml
         kubectl -n core get all -o yaml
 

@@ -26,7 +26,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/leseb/rook-s3-nano/api/v1alpha1"
+	"github.com/redhat-et/rgw-standalone-operator/api/v1alpha1"
 	v1 "k8s.io/api/core/v1"
 	kexec "k8s.io/utils/exec"
 )
@@ -145,7 +145,7 @@ func realmTokenSecretEnv(secretName string) v1.EnvVar {
 
 // Hash stableName computes a stable pseudorandom string suitable for inclusion in a Kubernetes object name from the given seed string.
 // Do **NOT** edit this function in a way that would change its output as it needs to
-// provide consistent mappings from string to hash across versions of rook.
+// provide consistent mappings from string to hash.
 func hash(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:16])

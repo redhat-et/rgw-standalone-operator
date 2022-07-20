@@ -1,4 +1,4 @@
-apiVersion: object.rook-s3-nano/v1alpha1
+apiVersion: object.rgw-standalone/v1alpha1
 kind: ObjectStore
 metadata:
   name: objectstore-sample

@@ -37,7 +37,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - object.rook-s3-nano
+  - object.rgw-standalone
   resources:
   - objectstores
   verbs:
@@ -49,13 +49,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - object.rook-s3-nano
+  - object.rgw-standalone
   resources:
   - objectstores/finalizers
   verbs:
   - update
 - apiGroups:
-  - object.rook-s3-nano
+  - object.rgw-standalone
   resources:
   - objectstores/status
   verbs:
