@@ -48,6 +48,9 @@ type GatewaySpec struct {
 }
 
 type MultisiteSpec struct {
+	// IsMainSite is true if this is the main site of the multisite
+	IsMainSite bool `json:"isMainSite,omitempty"`
+
 	// RealmTokenSecretName is the name of the Kubernetes Secret that contains the realm token
 	// It is used to bootstrap the Zone
 	// +optional
@@ -91,4 +94,8 @@ func init() {
 
 func (o *ObjectStoreSpec) IsMultisite() bool {
 	return o.Multisite != nil && o.Multisite.RealmTokenSecretName != ""
+}
+
+func (o *ObjectStoreSpec) IsMainSite() bool {
+	return o.Multisite != nil && o.Multisite.IsMainSite
 }

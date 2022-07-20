@@ -26,28 +26,66 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: install deps
+      run: |
+        ./hack/ci-helper.sh install_deps
+
     - name: setup cluster resources and build
       uses: ./.github/workflows/setup
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: deploy cluster
+    - name: deploy edge gateway
       run: |
         export IMG=controller:alpha
         make install
         make deploy
-        kubectl -n rook-s3-nano-system create -f config/samples/object_v1alpha1_objectstore.yaml
+        kubectl create ns edge
+        kubectl -n edge create -f config/samples/object_v1alpha1_objectstore_mainsite.yaml
 
-    - name: wait for rgw to be ready
+    - name: wait for edge rgw to be ready
       run: |
-        ./hack/ci-helper.sh wait_for_rgw
+        ./hack/ci-helper.sh wait_for_rgw edge
+
+    - name: copy realm token from edge to core
+      timeout-minutes: 1
+      run: |
+        until kubectl -n edge get secret object-store-realm-token; do
+          echo "Waiting for object-store-realm-token secret to be created..."
+          sleep 1
+        done
+        kubectl -n edge get secret object-store-realm-token -o yaml > edge-object-store-realm-token.yaml
+        yq delete --inplace edge-object-store-realm-token.yaml metadata.ownerReferences
+        yq write --inplace edge-object-store-realm-token.yaml metadata.namespace core
+        yq write --inplace edge-object-store-realm-token.yaml metadata.name edge-object-store-realm-token
+
+
+    - name: create a new gateway on core
+      run: |
+        kubectl create ns core
+        kubectl create -f edge-object-store-realm-token.yaml
+        kubectl -n core create -f config/samples/object_v1alpha1_objectstore.yaml
+
+    - name: wait for core rgw to be ready
+      run: |
+        ./hack/ci-helper.sh wait_for_rgw core
+
+    - name: print op and cr status
+      run: |
         kubectl -n rook-s3-nano-system get all -o wide
+        kubectl -n edge get all -o yaml
+        kubectl -n core get all -o yaml
 
-    - name: run s3 operations
+    - name: run s3 operations on edge
       run: |
-        ./hack/ci-helper.sh run_s3_ops
+        ./hack/ci-helper.sh run_s3_ops edge write
+
+    - name: verify data from edge have been synced to core
+      timeout-minutes: 1
+      run: |
+        until ./hack/ci-helper.sh run_s3_ops core read; do echo "Waiting for data to be synced..."; sleep 1; done
+        until ./hack/ci-helper.sh run_s3_ops edge read; do echo "Waiting for data to be synced..."; sleep 1; done
 
     - name: set up tmate session for debugging
       if: failure()
       uses: mxschmitt/action-tmate@v3
-      timeout-minutes: 60
