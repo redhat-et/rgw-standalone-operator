@@ -3,7 +3,6 @@
 # It should be run by config/default
 resources:
 - bases/object.rgw-standalone_objectstores.yaml
-- bases/ob-obc.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:
