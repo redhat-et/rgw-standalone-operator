@@ -32,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	bktv1alpha1 "github.com/kube-object-storage/lib-bucket-provisioner/pkg/apis/objectbucket.io/v1alpha1"
 	objectv1alpha1 "github.com/redhat-et/rgw-standalone-operator/api/v1alpha1"
 	"github.com/redhat-et/rgw-standalone-operator/controllers"
 	//+kubebuilder:scaffold:imports
@@ -50,8 +49,6 @@ func init() {
 	// Our API
 	utilruntime.Must(objectv1alpha1.AddToScheme(scheme))
 
-	// OB and OBC types for lib-bucket-provisioner
-	utilruntime.Must(bktv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -102,15 +99,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// if err = (&controllers.ObjectStoreBucketReconciler{
-	// 	Client:     mgr.GetClient(),
-	// 	Scheme:     mgr.GetScheme(),
-	// 	RestConfig: mgr.GetConfig(),
-	// 	Logger:     ctrl.Log.WithName("controllers").WithName("ObjectStoreBucket"),
-	// }).SetupWithManager(mgr); err != nil {
-	// 	setupLog.Error(err, "failed to create controller", "controller", "ObjectStoreBucket")
-	// 	os.Exit(1)
-	// }
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
