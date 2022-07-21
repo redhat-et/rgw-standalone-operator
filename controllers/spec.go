@@ -22,7 +22,7 @@ import (
 	"reflect"
 	"time"
 
-	objectv1alpha1 "github.com/leseb/rook-s3-nano/api/v1alpha1"
+	objectv1alpha1 "github.com/redhat-et/rgw-standalone-operator/api/v1alpha1"
 
 	apps "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -217,13 +217,11 @@ func getLabelString(name string) string {
 }
 
 // chownCephDataDirsInitContainer returns an init container which `chown`s the given data
-// directories as the `ceph:ceph` user in the container. It also `chown`s the Ceph log dir in the
-// container automatically.
-// Doing a chown in a post start lifecycle hook does not reliably complete before the OSD
+// directories as the `ceph:ceph` user in the container.
+// Doing a chown in a post start lifecycle hook does not reliably complete before the daemon
 // process starts, which can cause the pod to fail without the lifecycle hook's chown command
 // completing. It can take an arbitrarily long time for a pod restart to successfully chown the
 // directory. This is a race condition for all daemons; therefore, do this in an init container.
-// See more discussion here: https://github.com/rook/rook/pull/3594#discussion_r312279176
 func chownCephDataDirsInitContainer(
 	containerImage string,
 	volumeMounts []v1.VolumeMount,

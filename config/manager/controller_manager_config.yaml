@@ -8,4 +8,4 @@ webhook:
   port: 9443
 leaderElection:
   leaderElect: true
-  resourceName: ebd6c04d.rook-s3-nano
+  resourceName: ebd6c04d.rgw-standalone

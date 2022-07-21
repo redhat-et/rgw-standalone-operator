@@ -32,7 +32,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/kube-object-storage/lib-bucket-provisioner/pkg/provisioner"
 	"github.com/kube-object-storage/lib-bucket-provisioner/pkg/provisioner/api"
-	objectv1alpha1 "github.com/leseb/rook-s3-nano/api/v1alpha1"
+	objectv1alpha1 "github.com/redhat-et/rgw-standalone-operator/api/v1alpha1"
 )
 
 // ObjectStoreBucketReconciler reconciles a ObjectStore bucket object
@@ -53,7 +53,7 @@ var (
 
 //+kubebuilder:rbac:groups=objectbucket.io,resources=objectbuckets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=objectbucket.io,resources=objectbucketclaims,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=object.rook-s3-nano,resources=objectstores/status,verbs=get
+//+kubebuilder:rbac:groups=object.rgw-standalone,resources=objectstores/status,verbs=get
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.

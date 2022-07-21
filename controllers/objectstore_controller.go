@@ -33,7 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/go-logr/logr"
-	objectv1alpha1 "github.com/leseb/rook-s3-nano/api/v1alpha1"
+	objectv1alpha1 "github.com/redhat-et/rgw-standalone-operator/api/v1alpha1"
 	controllerutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -45,9 +45,9 @@ type ObjectStoreReconciler struct {
 	*RemotePodCommandExecutor
 }
 
-//+kubebuilder:rbac:groups=object.rook-s3-nano,resources=objectstores,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=object.rook-s3-nano,resources=objectstores/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=object.rook-s3-nano,resources=objectstores/finalizers,verbs=update
+//+kubebuilder:rbac:groups=object.rgw-standalone,resources=objectstores,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=object.rgw-standalone,resources=objectstores/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=object.rgw-standalone,resources=objectstores/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=create;delete;get;list
 //+kubebuilder:rbac:groups="",resources=services,verbs=create;delete;get;update;list;watch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;list;watch

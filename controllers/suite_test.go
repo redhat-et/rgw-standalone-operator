@@ -30,7 +30,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	objectv1alpha1 "github.com/leseb/rook-s3-nano/api/v1alpha1"
+	objectv1alpha1 "github.com/redhat-et/rgw-standalone-operator/api/v1alpha1"
 	//+kubebuilder:scaffold:imports
 )
 

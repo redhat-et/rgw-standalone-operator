@@ -33,8 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	bktv1alpha1 "github.com/kube-object-storage/lib-bucket-provisioner/pkg/apis/objectbucket.io/v1alpha1"
-	objectv1alpha1 "github.com/leseb/rook-s3-nano/api/v1alpha1"
-	"github.com/leseb/rook-s3-nano/controllers"
+	objectv1alpha1 "github.com/redhat-et/rgw-standalone-operator/api/v1alpha1"
+	"github.com/redhat-et/rgw-standalone-operator/controllers"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -78,7 +78,7 @@ func main() {
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "ebd6c04d.rook-s3-nano",
+		LeaderElectionID:       "ebd6c04d.rgw-standalone",
 	})
 	if err != nil {
 		setupLog.Error(err, "failed to start manager")

@@ -1,19 +1,19 @@
-domain: rook-s3-nano
+domain: rgw-standalone
 layout:
 - go.kubebuilder.io/v3
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
-projectName: rook-s3-nano
-repo: github.com/leseb/rook-s3-nano
+projectName: rgw-standalone
+repo: github.com/redhat-et/rgw-standalone-operator
 resources:
 - api:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: rook-s3-nano
+  domain: rgw-standalone
   group: object
   kind: ObjectStore
-  path: github.com/leseb/rook-s3-nano/api/v1alpha1
+  path: github.com/redhat-et/rgw-standalone-operator/api/v1alpha1
   version: v1alpha1
 version: "3"
